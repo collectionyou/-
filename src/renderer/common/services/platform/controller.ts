@@ -26,6 +26,18 @@ export async function getPlatformList() {
   return data;
 }
 
+export async function getRunningPlatformList() {
+  const data = await GET<{
+    data: {
+      id: string;
+      running: boolean;
+      matchedName?: string;
+      matchedTitle?: string;
+    }[];
+  }>('/api/v1/base/platform/running');
+  return data;
+}
+
 export async function updatePlatform(ids: string[]) {
   await POST('/api/v1/base/platform', ids);
 }

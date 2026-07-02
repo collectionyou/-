@@ -9,16 +9,69 @@ import React, {
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  getPlatformList,
   getTasks,
   removeTask,
   addTask,
+  getRunningPlatformList,
 } from '../../../common/services/platform/controller';
 import defaultPlatformIcon from '../../../../../assets/base/default-platform-icon.png';
 import { Instance, App } from '../../../common/services/platform/platform';
 
+export type StaticApp = App & {
+  iconText?: string;
+  enabled?: boolean;
+  running?: boolean;
+  matchedName?: string;
+  matchedTitle?: string;
+};
+
+const STATIC_PLATFORM_LIST: StaticApp[] = [
+  {
+    id: 'pinduoduo',
+    name: '拼多多',
+    env: 'desktop',
+    iconText: '拼',
+    enabled: true,
+  },
+  {
+    id: 'win_qianniu',
+    name: '千牛',
+    env: 'desktop',
+    iconText: '千',
+    enabled: true,
+  },
+  {
+    id: 'jinritemai',
+    name: '抖店',
+    env: 'desktop',
+    iconText: '抖',
+    enabled: true,
+  },
+  {
+    id: 'douyin',
+    name: '抖音',
+    env: 'desktop',
+    iconText: '音',
+    enabled: true,
+  },
+  {
+    id: 'xiaohongshu',
+    name: '小红书',
+    env: 'desktop',
+    iconText: '红',
+    enabled: true,
+  },
+  {
+    id: 'jingmai',
+    name: '京麦',
+    env: 'desktop',
+    iconText: '京',
+    enabled: true,
+  },
+];
+
 interface AppManagerContextType {
-  data: { data: App[] } | undefined;
+  data: { data: StaticApp[] };
   isLoading: boolean;
   isTasksLoading: boolean;
   hasRequestedPlatforms: boolean;
@@ -31,6 +84,7 @@ interface AppManagerContextType {
   isSettingsOpen: boolean;
   setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleSearch: (searchTerm: string) => void;
+  handleSelectApp: (appId: string) => Promise<boolean>;
   handleDelete: (taskId: string) => void;
   handleAddTask: () => void;
   instances: Instance[];
@@ -52,41 +106,28 @@ export const useAppManager = (): AppManagerContextType => {
   return context;
 };
 
-const usePlatformList = (enabled: boolean) => {
-  const { data, error, isLoading } = useQuery(
-    ['platformList'],
-    getPlatformList,
-    {
-      enabled,
-      retry: false,
-    },
-  );
-
-  return { data, isLoading, error };
-};
-
-const useTaskList = (enabled: boolean) => {
+const useTaskList = () => {
   return useQuery(['tasks'], () => getTasks(), {
-    enabled,
+    retry: false,
   });
 };
 
-const useInstances = (enabled: boolean) => {
-  const { data: taskData, refetch: refetchTasks } = useTaskList(enabled);
+const useInstances = () => {
+  const { data: taskData, refetch: refetchTasks } = useTaskList();
   const instances = taskData?.data || [];
 
   return { instances, refetchTasks };
 };
 
 const useFilteredInstances = (
-  data: { data: App[] } | undefined,
+  data: { data: StaticApp[] },
   instances: Instance[],
   selectedAppId: string | null,
 ) => {
   const [filteredInstances, setFilteredInstances] = useState<Instance[]>([]);
 
   useEffect(() => {
-    if (selectedAppId && data) {
+    if (selectedAppId) {
       const matchedInstances = instances.filter(
         (instance) => instance.app_id === selectedAppId,
       );
@@ -105,13 +146,8 @@ const useFilteredInstances = (
   return { filteredInstances, setFilteredInstances };
 };
 
-const useRefreshConfigListener = (
-  refetchTasks: () => void,
-  enabled: boolean,
-) => {
+const useRefreshConfigListener = (refetchTasks: () => void) => {
   useEffect(() => {
-    if (!enabled) return undefined;
-
     const refreshConfigListener = async () => {
       try {
         await refetchTasks();
@@ -124,12 +160,13 @@ const useRefreshConfigListener = (
     return () => {
       window.electron.ipcRenderer.remove('refresh-config');
     };
-  }, [refetchTasks, enabled]);
+  }, [refetchTasks]);
 };
 
 export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
-  const [hasRequestedPlatforms, setHasRequestedPlatforms] = useState(false);
-  const { data, isLoading } = usePlatformList(hasRequestedPlatforms);
+  const [allPlatforms, setAllPlatforms] =
+    useState<StaticApp[]>(STATIC_PLATFORM_LIST);
+  const [platforms, setPlatforms] = useState<StaticApp[]>(STATIC_PLATFORM_LIST);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
     null,
@@ -137,10 +174,11 @@ export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
   const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const { instances, refetchTasks } = useInstances(hasRequestedPlatforms);
+  const { instances, refetchTasks } = useInstances();
 
-  useRefreshConfigListener(refetchTasks, hasRequestedPlatforms);
+  useRefreshConfigListener(refetchTasks);
 
+  const data = useMemo(() => ({ data: platforms }), [platforms]);
   const { filteredInstances, setFilteredInstances } = useFilteredInstances(
     data,
     instances,
@@ -148,26 +186,64 @@ export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
   );
 
   const requestPlatforms = useCallback(() => {
-    setHasRequestedPlatforms(true);
-  }, []);
+    setPlatforms(allPlatforms);
+  }, [allPlatforms]);
 
   const handleSearch = useCallback(
     (searchTerm: string) => {
-      if (data) {
-        const matchedInstances = instances.filter((instance) => {
-          const app = data.data.find((x) => x.id === instance.app_id);
-          return app?.name.includes(searchTerm);
-        });
-        const updatedInstances = matchedInstances.map((instance) => ({
-          ...instance,
-          avatar:
-            data.data.find((app) => app.id === instance.app_id)?.avatar ||
-            defaultPlatformIcon,
-        }));
-        setFilteredInstances(updatedInstances);
+      const keyword = searchTerm.trim();
+      if (!keyword) {
+        setPlatforms(allPlatforms);
+        return;
+      }
+
+      setPlatforms(allPlatforms.filter((app) => app.name.includes(keyword)));
+    },
+    [allPlatforms],
+  );
+
+  const updatePlatformRunning = useCallback(
+    (
+      appId: string,
+      detected?: {
+        running: boolean;
+        matchedName?: string;
+        matchedTitle?: string;
+      },
+    ) => {
+      const patchPlatform = (app: StaticApp) =>
+        app.id === appId
+          ? {
+              ...app,
+              running: Boolean(detected?.running),
+              matchedName: detected?.matchedName,
+              matchedTitle: detected?.matchedTitle,
+            }
+          : app;
+
+      setAllPlatforms((prev) => prev.map(patchPlatform));
+      setPlatforms((prev) => prev.map(patchPlatform));
+    },
+    [],
+  );
+
+  const handleSelectApp = useCallback(
+    async (appId: string) => {
+      setSelectedAppId(appId);
+      setSelectedInstanceId(null);
+
+      try {
+        const resp = await getRunningPlatformList();
+        const detected = (resp.data || []).find((item) => item.id === appId);
+        updatePlatformRunning(appId, detected);
+        return Boolean(detected?.running);
+      } catch (error) {
+        console.error('Failed to detect selected platform', error);
+        updatePlatformRunning(appId);
+        return false;
       }
     },
-    [data, instances, setFilteredInstances],
+    [updatePlatformRunning],
   );
 
   const handleDelete = useCallback(
@@ -201,9 +277,9 @@ export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
   const contextValue = useMemo(
     () => ({
       data,
-      isLoading,
+      isLoading: false,
       isTasksLoading,
-      hasRequestedPlatforms,
+      hasRequestedPlatforms: true,
       requestPlatforms,
       selectedAppId,
       setSelectedAppId,
@@ -213,15 +289,14 @@ export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
       isSettingsOpen,
       setIsSettingsOpen,
       handleSearch,
+      handleSelectApp,
       handleDelete,
       handleAddTask,
       instances,
     }),
     [
       data,
-      isLoading,
       isTasksLoading,
-      hasRequestedPlatforms,
       requestPlatforms,
       selectedAppId,
       selectedInstanceId,
@@ -229,6 +304,7 @@ export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
       isSettingsOpen,
       instances,
       handleSearch,
+      handleSelectApp,
       handleDelete,
       handleAddTask,
     ],

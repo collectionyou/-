@@ -24,7 +24,6 @@ const InstanceListComponent = () => {
     handleDelete,
     handleAddTask,
     setIsSettingsOpen,
-    hasRequestedPlatforms,
   } = useAppManager();
 
   const [currentAppId, setCurrentAppId] = useState(selectedAppId);
@@ -52,21 +51,11 @@ const InstanceListComponent = () => {
 
   let content;
 
-  if (!hasRequestedPlatforms) {
-    return (
-      <Flex justifyContent="center" alignItems="center" w="60%" h="100%">
-        <Text fontSize="xl" color="gray.500">
-          请先加载应用列表
-        </Text>
-      </Flex>
-    );
-  }
-
   if (!selectedAppId) {
     return (
       <Flex justifyContent="center" alignItems="center" w="60%" h="100%">
         <Text fontSize="xl" color="gray.500">
-          请先选择一个应用
+          请选择一个平台
         </Text>
       </Flex>
     );
@@ -86,7 +75,7 @@ const InstanceListComponent = () => {
   } else {
     content = (
       <Text fontSize="xl" color="gray.500">
-        没有启动该应用的客服
+        尚未连接该平台客服
       </Text>
     );
   }
@@ -100,7 +89,7 @@ const InstanceListComponent = () => {
             <Spinner size="md" />
           </Flex>
         ) : (
-          <Tooltip label="新增一个客服账号">
+          <Tooltip label="点击后才连接该平台并新增客服账号">
             <Flex
               w="100%"
               h="50px"

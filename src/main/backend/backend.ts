@@ -3,6 +3,8 @@ import cors from 'cors';
 import asyncHandler from 'express-async-handler';
 import bodyParser from 'body-parser';
 import http from 'http';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { Server } from 'socket.io';
 import { BrowserWindow, shell } from 'electron';
 import { sequelize } from './ormconfig';
@@ -14,6 +16,8 @@ import { DispatchService } from './services/dispatchService';
 import { PluginService } from './services/pluginService';
 import { AppService } from './services/appService';
 import { LoggerService } from './services/loggerService';
+
+const execFileAsync = promisify(execFile);
 
 class BKServer {
   private app: express.Application;
@@ -39,6 +43,33 @@ class BKServer {
   private loggerService: LoggerService;
 
   private appService: AppService;
+
+  private platformDetectRules = [
+    {
+      id: 'pinduoduo',
+      aliases: ['pinduoduo', 'pdd', '拼多多', '拼多多商家'],
+    },
+    {
+      id: 'win_qianniu',
+      aliases: ['qianniu', 'aliworkbench', '千牛'],
+    },
+    {
+      id: 'jinritemai',
+      aliases: ['jinritemai', 'douyinshop', '抖店', '飞鸽'],
+    },
+    {
+      id: 'douyin',
+      aliases: ['douyin', '抖音'],
+    },
+    {
+      id: 'xiaohongshu',
+      aliases: ['xiaohongshu', 'redbook', '小红书'],
+    },
+    {
+      id: 'jingmai',
+      aliases: ['jingmai', '京麦'],
+    },
+  ];
 
   constructor(port: number, mainWindow: BrowserWindow) {
     this.app = express();
@@ -101,6 +132,64 @@ class BKServer {
     });
   }
 
+  private async detectRunningPlatforms(): Promise<
+    {
+      id: string;
+      running: boolean;
+      matchedName?: string;
+      matchedTitle?: string;
+    }[]
+  > {
+    const script = [
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+      '$OutputEncoding = [System.Text.Encoding]::UTF8',
+      'Get-Process | Select-Object ProcessName,MainWindowTitle | ConvertTo-Json -Compress',
+    ].join('; ');
+
+    try {
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+        {
+          timeout: 2500,
+          windowsHide: true,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+
+      const parsed = JSON.parse(stdout || '[]');
+      const processList = Array.isArray(parsed) ? parsed : [parsed];
+      const normalizedList = processList.map((item: any) => ({
+        name: String(item?.ProcessName || ''),
+        title: String(item?.MainWindowTitle || ''),
+        haystack: `${String(item?.ProcessName || '')} ${String(
+          item?.MainWindowTitle || '',
+        )}`.toLowerCase(),
+      }));
+
+      return this.platformDetectRules.map((rule) => {
+        const matched = normalizedList.find((item) =>
+          rule.aliases.some((alias) =>
+            item.haystack.includes(alias.toLowerCase()),
+          ),
+        );
+
+        return {
+          id: rule.id,
+          running: Boolean(matched),
+          matchedName: matched?.name,
+          matchedTitle: matched?.title,
+        };
+      });
+    } catch (error) {
+      this.loggerService.warn(`检测本地平台进程失败: ${String(error)}`);
+      return this.platformDetectRules.map((rule) => ({
+        id: rule.id,
+        running: false,
+      }));
+    }
+  }
+
   private setupRoutes(): void {
     this.app.post(
       '/api/v1/message/session',
@@ -151,6 +240,17 @@ class BKServer {
         const data = await this.dispatchService.getAllPlatforms();
         res.json({
           success: data && data.length > 0,
+          data,
+        });
+      }),
+    );
+
+    this.app.get(
+      '/api/v1/base/platform/running',
+      asyncHandler(async (_req, res) => {
+        const data = await this.detectRunningPlatforms();
+        res.json({
+          success: true,
           data,
         });
       }),
