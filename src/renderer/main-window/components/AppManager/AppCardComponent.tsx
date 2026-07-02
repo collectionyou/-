@@ -8,7 +8,6 @@ import {
   IconButton,
   Tooltip,
   Text,
-  useToast,
 } from '@chakra-ui/react';
 import { SettingsIcon } from '@chakra-ui/icons';
 import defaultPlatformIcon from '../../../../../assets/base/default-platform-icon.png';
@@ -26,7 +25,7 @@ type AppCardComponentProps = {
     matchedTitle?: string;
   };
   selectedAppId: string | null;
-  handleSelectApp: (appId: string) => Promise<boolean>;
+  handleSelectApp: (appId: string) => void;
   openSettings: (e: boolean) => void;
   instances: {
     task_id: string;
@@ -42,10 +41,10 @@ const AppCardComponent = ({
   openSettings,
   instances,
 }: AppCardComponentProps) => {
-  const toast = useToast();
   const appInstancesCount = instances.filter(
     (instance) => instance.app_id === app.id,
   ).length;
+  const isConnected = appInstancesCount > 0;
 
   return (
     <Flex
@@ -60,17 +59,8 @@ const AppCardComponent = ({
           : 'none'
       }
       cursor="pointer"
-      onClick={async () => {
-        const running = await handleSelectApp(app.id);
-        if (!running) {
-          toast({
-            title: `未检测到 ${app.name}`,
-            description: `请先启动 ${app.name} 客服客户端，再点击该平台连接。`,
-            status: 'warning',
-            duration: 3000,
-            isClosable: true,
-          });
-        }
+      onClick={() => {
+        handleSelectApp(app.id);
       }}
     >
       {appInstancesCount > 0 && (
@@ -129,15 +119,15 @@ const AppCardComponent = ({
       <HStack align="center" flex="1">
         <Tooltip
           label={
-            app.running
-              ? app.matchedTitle || app.matchedName || '已检测到运行中'
-              : '未检测到运行中'
+            isConnected
+              ? '已连接到策略服务'
+              : '尚未连接到策略服务'
           }
         >
           <Box
             boxSize="8px"
             borderRadius="full"
-            bg={app.running ? 'green.400' : 'red.400'}
+            bg={isConnected ? 'green.400' : 'red.400'}
             flexShrink={0}
           />
         </Tooltip>

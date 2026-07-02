@@ -14,6 +14,38 @@ export class AppService {
     this.sequelize = sequelize;
   }
 
+  private normalizeTaskUpdateResult(result: any): {
+    task_id: string;
+    env_id: string;
+    error?: string;
+  }[] {
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (Array.isArray(result?.data)) {
+      return result.data;
+    }
+
+    if (Array.isArray(result?.tasks)) {
+      return result.tasks;
+    }
+
+    if (Array.isArray(result?.result)) {
+      return result.result;
+    }
+
+    if (result?.error) {
+      throw new Error(String(result.error));
+    }
+
+    if (result?.message) {
+      throw new Error(String(result.message));
+    }
+
+    throw new Error('策略服务没有返回有效任务列表，请确认平台客户端已启动并重新连接');
+  }
+
   public async getTasks(): Promise<
     {
       task_id: string;
@@ -55,8 +87,9 @@ export class AppService {
         // 取得全部 Tasks 然后全部更新
         const tasks = await Instance.findAll();
         tasks.push(instance);
-        const result = await this.dispatchService.updateTasks(tasks);
-        if (!result || result.length === 0) {
+        const rawResult = await this.dispatchService.updateTasks(tasks);
+        const result = this.normalizeTaskUpdateResult(rawResult);
+        if (result.length === 0) {
           throw new Error('添加任务失败，请重新尝试');
         }
 

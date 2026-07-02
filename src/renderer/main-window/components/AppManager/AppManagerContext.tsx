@@ -12,7 +12,6 @@ import {
   getTasks,
   removeTask,
   addTask,
-  getRunningPlatformList,
 } from '../../../common/services/platform/controller';
 import defaultPlatformIcon from '../../../../../assets/base/default-platform-icon.png';
 import { Instance, App } from '../../../common/services/platform/platform';
@@ -84,7 +83,7 @@ interface AppManagerContextType {
   isSettingsOpen: boolean;
   setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleSearch: (searchTerm: string) => void;
-  handleSelectApp: (appId: string) => Promise<boolean>;
+  handleSelectApp: (appId: string) => void;
   handleDelete: (taskId: string) => void;
   handleAddTask: () => void;
   instances: Instance[];
@@ -202,49 +201,10 @@ export const AppManagerProvider = ({ children }: AppManagerProviderProps) => {
     [allPlatforms],
   );
 
-  const updatePlatformRunning = useCallback(
-    (
-      appId: string,
-      detected?: {
-        running: boolean;
-        matchedName?: string;
-        matchedTitle?: string;
-      },
-    ) => {
-      const patchPlatform = (app: StaticApp) =>
-        app.id === appId
-          ? {
-              ...app,
-              running: Boolean(detected?.running),
-              matchedName: detected?.matchedName,
-              matchedTitle: detected?.matchedTitle,
-            }
-          : app;
-
-      setAllPlatforms((prev) => prev.map(patchPlatform));
-      setPlatforms((prev) => prev.map(patchPlatform));
-    },
-    [],
-  );
-
-  const handleSelectApp = useCallback(
-    async (appId: string) => {
-      setSelectedAppId(appId);
-      setSelectedInstanceId(null);
-
-      try {
-        const resp = await getRunningPlatformList();
-        const detected = (resp.data || []).find((item) => item.id === appId);
-        updatePlatformRunning(appId, detected);
-        return Boolean(detected?.running);
-      } catch (error) {
-        console.error('Failed to detect selected platform', error);
-        updatePlatformRunning(appId);
-        return false;
-      }
-    },
-    [updatePlatformRunning],
-  );
+  const handleSelectApp = useCallback((appId: string) => {
+    setSelectedAppId(appId);
+    setSelectedInstanceId(null);
+  }, []);
 
   const handleDelete = useCallback(
     async (taskId: string) => {
